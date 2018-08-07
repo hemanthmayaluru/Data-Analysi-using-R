@@ -1,0 +1,182 @@
+
+---
+title: "DataAnalyticsProject"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Project Motivation
+This analysis focuses on the development of an objective, automated method to extract clinically useful information from in the context of Parkinson's disease (PD). The main aim of the data is to predict the motor and total UPDRS scores ('motor_UPDRS' and 'total_UPDRS') from the 16 voice measures.
+Parkinson's disease is a progressive disorder of the nervous system that affects movement. The person's motor skill is affected and their speech may become soft or slurred and this feature is used to determine the condition as this can be collected easily.
+##Dataset Overview
+	This dataset is composed of a range of biomedical voice measurements from 42 people with early-stage Parkinson's disease recruited to a six-month trial of a telemonitoring device for remote symptom progression monitoring. The recordings were automatically captured in the patient's homes. Each column in the table is a particular voice measure, and each row corresponds one of 195 voice recording from these individuals ("name" column). The main aim of the data is to discriminate healthy people from those with PD, according to "status" column which is set to 0 for healthy and 1 for PD.
+##Dataset Source
+The dataset was created by Athanasios Tsanas (tsanasthanasis@gmail.com) and Max Little (littlem '@' physics.ox.ac.uk) of the University of Oxford, in collaboration with 10 medical centers in the US and Intel Corporation who developed the telemonitoring device to record the speech signals. The original study used a range of linear and nonlinear regression methods to predict the clinician's Parkinson's disease symptom score on the UPDRS scale.
+ Citation: 'Exploiting Nonlinear Recurrence and Fractal Scaling Properties for Voice Disorder Detection', Little MA, McSharry PE, Roberts SJ, Costello DAE, Moroz IM. BioMedical Engineering OnLine 2007, 6:23 (26 June 2007)
+##Approach
+We started with finding the correlation between various parameters using different visualizations followed by the linear regression model that identifies the significant parameters for predicting the total_UPDRS score. Later time series analysis is done based on the test time.
+
+##Basic Visualizations
+
+First the collected data is plotted to see the general spread of data and to get an idea of how the density of the data is with respect to various parameters. As we can see, age selected is mostly over 55 with 1 person under 40. There is a good distribution of the test time. The jitter and shimmer percentage doesn't seem to vary much and is concentrated to the lower side. The distribution of RPDE, DFA and PPE are more evenly distributed in the range.
+
+
+```{r echo=FALSE}
+library(pacman)
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(foreign)
+library(gridExtra)
+##Reading parkinson data file into R
+parkinson <- read.csv("parkinson.csv", sep = ",")
+attach(parkinson)
+##Omit null values if any
+parkinson <- na.omit(parkinson)
+summary(parkinson)
+
+
+ggplot(parkinson, aes(x = total_UPDRS)) + geom_density() + geom_histogram(binwidth = 6, fill = blues9)
+
+con1 <- parkinson%>% group_by(subject) %>% summarise(all_age = mean(age))
+p1 <- qplot(all_age, data = con1)+geom_density()
+p2 <- qplot(test_time, data = parkinson)+geom_density()
+p3 <- qplot(motor_UPDRS, data = parkinson)+geom_density()
+p4 <- qplot(Jitter.Percentage, data = parkinson)+geom_density()
+p5 <- qplot(Shimmer, data = parkinson)+geom_density()
+p6 <- qplot(NHR, data = parkinson)+geom_density()
+p7 <- qplot(RPDE, data = parkinson)+geom_density()
+p8 <- qplot(DFA, data = parkinson)+geom_density()
+p9 <- qplot(PPE, data = parkinson)+geom_density()
+grid.arrange(p1, p2, p3, p4,p5,p6, p7, p8, p9, nrow = 3)
+
+parkinson %>% ggplot(aes(x = total_UPDRS)) + geom_density()
+
+#Box Plot
+fill <- "yellow"
+line <- "blue"
+ggplot(parkinson, aes(x =as.factor(subject), y =NHR)) +
+  geom_boxplot(fill = fill, colour = line) +
+  scale_y_continuous(name = "NHR") +
+  scale_x_discrete(name = "subject")
+
+
+```
+
+##Linear Regression :
+    We plot the linear regression model for total_UPDRS against all other parameters. Initially on all the parameters and improve the model by removing the insignificant parameters from the model and analyze.
+
+
+
+```{r echo=FALSE}
+parkinson_linear <- lm(total_UPDRS~age+sex+test_time+motor_UPDRS+Jitter.PPQ5+Jitter.Percentage+Jitter.RAP+Jitter.DDP+Shimmer+Shimmer.dB+Shimmer.APQ3+Shimmer.APQ5+Shimmer.APQ11+Shimmer.DDA+NHR+HNR+RPDE+DFA+PPE)
+summary(parkinson_linear)
+```
+
+Model before optimization:
+R-square of the above model is 90.74% and adjusted R-square is 90.71% which shows good correlation in the model.
+Using step AIC we get the subset of the model we will evaluate the model by checking AIC values for each variable and try to reduce AIC of the model by removing the variables of high AIC. Once we do this, step$anova gives us the best model among others. 
+
+```{r echo=FALSE}
+
+library(MASS)
+step <- stepAIC(parkinson_linear, direction = "both")
+
+model1 <- lm(total_UPDRS ~ age + sex + test_time + motor_UPDRS + Jitter.Percentage + Jitter.RAP + Shimmer + Shimmer.APQ5 + Shimmer.APQ11 + HNR + RPDE + DFA + PPE)
+summary(model1)
+
+#Plotting
+plot(model1, col = "purple")
+##Checks and gives the best model
+step$anova
+
+best_model <- lm(total_UPDRS ~ age + sex + test_time + motor_UPDRS + 
+                   Jitter.RAP + Shimmer + Shimmer.APQ5 + Shimmer.APQ11 + HNR + 
+                   RPDE + DFA + PPE)
+ggplot(best_model, aes(x=total_UPDRS, y=motor_UPDRS)) +
+  geom_point() + geom_smooth(method="lm") 
+summary(best_model)
+plot(best_model, col = "green")
+
+```
+##Model after optimization:
+The parameters: Jitter.PPQ5, Jitter.Percentage, Jitter.DDP, Shimmer.dB, Shimmer.DDA, NHR are insignificant and hence removed from the final model. This model seems to be fittest model as R-square is 90.7% and Adjusted R-square is also high equal to 90.68% which show a good correlation.
+The linear regression models a range of -2.079 as a first quantile and 1.4599 as a third quantile with median at -0.05 seem to be symmetric and low enough. 
+The coefficient for example age, shows that there is a good dependency on the parameter. There seem to be a change of 6.843e-02 for a unit increase in age with an error of 5.167e-03. Based on the t value of 13.243 and the probability of finding a value greater than t at < 2e-16, we can state that there is a clear relation with the parameter selected. As can be seen, not all the parameters considered seem to have an effect on the output and there is some null hypothesis present in that regard.
+The R-square error above shows a 90 % dependency showing a good correlation of the model with the actual data.
+We plot using Box-Cox to make the model more uniform.
+
+Our model seems to be linearly fit as seen from the residual vs fitted values plot. Norm QQ plot also telling that quantiles and standardized residual are equally normally distributed. Residual vs Leverage plot is also uniform.
+
+
+```{r echo=FALSE}
+boxcox(best_model)
+
+```
+
+#Clustering
+Clustering is performed based on total_UPDRS against test_time to give 4 clusters. Clustering on multiple variables with age, total_UPDRS and sex is also done which can be shown in the below figures.
+```{r}
+boxcox(best_model)
+##Clustering
+library(MASS)
+library(dplyr)
+parkinson_cluster = parkinson[,c("test_time","total_UPDRS")]
+cbind(parkinson,
+      Cluster = kmeans(parkinson_cluster,4)$cluster) %>%
+  ggplot(aes(x = total_UPDRS, y=test_time, color=factor(Cluster))) +
+  geom_point() + scale_y_sqrt()
+ #4 clusters based on total_UPDRS against test_time
+#clustering on multipe variables with age, total_UPDRS and sex
+parkinson_cluster3 = parkinson[,c("age","total_UPDRS","sex")]
+cbind(parkinson,
+      Cluster = kmeans(parkinson_cluster3,4)$cluster) %>%
+  ggplot(aes(x = age, y=total_UPDRS, color=factor(Cluster))) +
+  geom_point() + scale_y_sqrt()
+
+
+```
+
+#Timeseries
+Time series is done on test_time attribute to predict the test time for single subject and all the subjects. Then ARIMA model is applied, its summary is verified, ACF and PACF graphs are plotted, prediction is made.
+```{r}
+library(pacman)
+p_load(tidyverse, stringr,lubridate,ggplot2,tseries,forecast)
+
+park_time <- ts(parkinson$test_time, frequency = 1)
+#as.ts(x = park_time)
+is.ts(x = park_time)
+plot(park_time)
+plot(parkinson$test_time)
+
+#dpark_time <- decompose(park_time, "multiplicative")
+auto.arima(parkinson$test_time)
+
+#Plot for all the Subjects
+ggtsdisplay(parkinson$test_time, main="Test Time for all the Subjects")
+
+#plot for a Single Subject
+parkinson_test <- filter(parkinson, parkinson$subject == "1") 
+#parkinson_test2 <- filter(parkinson, subject == "2") 
+count(parkinson_test)
+ggtsdisplay(parkinson_test$test_time, main="Test Time for a Single Subject")
+
+#Arima Model & Plot
+model = arima(parkinson_test$test_time , order = c(3,0,4))
+summary(model)
+ggtsdisplay(residuals(model), lag.max=15)
+predict(model , n.ahead = 10)
+
+
+```
+
+##Conclusion:
+This project had a lot of learning for us as this was a full project and gave us an idea as to how analysis is done over a data set using R. 
+We initially selected a data which had a binary output with mostly categorical input parameter and so demonstrating regression over it was challenging and we couldn't get a satisfactory classification. We then selected the current data set as this has both a continuous output and also a timeline information which would enable us to do a timeline analysis also on the same data set. Some things we tried which was in addition to the features covered in the lecture was a great learning opportunity. A possible improvement is to better do the time series analysis where we wanted to predict the values based on the initial values to see how the future is going to be based on the parameters and couldn't conclude.
+
